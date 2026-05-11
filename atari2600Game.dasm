@@ -1,46 +1,300 @@
+                processor 6502
+                include "vcs.h"
+                include "macro.h"
+                include "xmacro.h"
 
-	processor 6502
-        include "vcs.h"
-        include "macro.h"
-        include "xmacro.h"
+                ; NTSC 262 scanlines 60 Hz, PAL 312 scanlines 50Hz
+PF_H            equ #192               ; playfield height
+OS_H            equ #30                ; overscan height
+VB_H            equ #33                ; vertical blank height - VERTICAL_SYNC macro takes 3 + 1 code in VB
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Variables segment
+BEAR_H          equ #15                ; bear sprite height
+BEAR_FP0        equ #31                ; Number of frames in the bear animation 0
+BEAR_FP1        equ #15                ; Number of frames in the bear animation 1
 
-        seg.u Variables
-	org $80
 
-Temp		.byte
+                seg.u vars             ; uninitialized segment
+                org $80                ; origin set at base of ram
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Code segment
+p0_y            .byte                   ; 1 byte - player 0 y pos
+p1_y            .byte                   ; 1 byte - player 1 y pos
+p0_x            .byte                   ; 1 byte - player 0 x pos
+p1_x            .byte                   ; 1 byte - player 1 x pos
+tp0_y           .byte                   ; 1 byte - temporary player 0 y pos
+tp1_y           .byte                   ; 1 byte - temporary player 1 y pos
+scanline        .byte                   ; 1 byte - current scanline
 
-	seg Code
-        org $f000
+bear_frameP0    .byte                   ; current frame of bear animation
+bear_frameP1    .byte 
+bearPtrP0       ds 2
+bearPtrP1       ds 2
 
-Start
-	CLEAN_START
+                seg main               ; start of main segment
+                org $F000
 
-NextFrame
-        lsr SWCHB	; test Game Reset switch
-        bcc Start	; reset?
-; 1 + 3 lines of VSYNC
-	VERTICAL_SYNC
-; 37 lines of underscan
-	TIMER_SETUP 37
-        TIMER_WAIT
-; 192 lines of frame
-	TIMER_SETUP 192
-        TIMER_WAIT
-; 29 lines of overscan
-	TIMER_SETUP 29
-        TIMER_WAIT
-; total = 262 lines, go to next frame
-        jmp NextFrame
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Epilogue
+start           CLEAN_START            ; ouput: all ram registers 0
 
-	org $fffc
-        .word Start	; reset vector
-        .word Start	; BRK vector
+                lda #$5b
+                sta COLUBK             ; set the PF color
+
+                lda #$76
+                sta COLUP0             ; set the P1 color
+
+                lda #$96
+                sta COLUP1             ; set the P1 color
+
+                lda #165
+                sta p0_y               ; initial y pos of p0
+                sta p1_y               ; initial y pos of p1 
+                
+                lda #70
+                sta p0_x               ; initial x pos of p0
+                lda #110
+                sta p1_x               ; initial x pos of p1 
+                
+
+nextFrame       VERTICAL_SYNC          ; output: a = 0
+                jsr MoveJoystick
+                jsr MoveJoystick1
+                
+                lda p0_x
+                ldx #0                 ; P0
+                jsr setHorizPos        ; set the initial course position of the player 0 graphic
+
+                
+                lda p1_x
+                ldx #1                 ; P1
+                jsr setHorizPos        ; set the initial course position of the player 1 graphic
+                
+                sta WSYNC	       ; NEED wsync and hmove, so scanline processes left/right movement correctly
+                sta HMOVE
+
+                ldx #VB_H              
+vblank          sta WSYNC            
+                dex                    ; decrement x by 1
+                bne vblank             ; branch if not equal
+
+                ; create a pointer to the bear graphic instead of pointing directy to it
+                inc bear_frameP0      
+                lda bear_frameP0     
+                and #BEAR_FP0        
+                sta bear_frameP0     
+                lsr                    
+                lsr                   
+                lsr                 
+                lsr                    
+                tax                    
+
+                lda bear_pLSB,x       
+                sta bearPtrP0        
+
+                lda bear_pMSB,x       
+                sta bearPtrP0+1      
+
+                inc bear_frameP1     
+                lda bear_frameP1     
+                and #BEAR_FP1         
+                sta bear_frameP1      
+                lsr                    
+                lsr                    
+                lsr                    
+                tax                    
+
+                lda bear_pMSB,x       
+                sta bearPtrP1+1      
+
+                lda bear_pLSB,x       
+                sta bearPtrP1         
+
+bear.done       lda p0_y               
+                sta tp0_y             
+
+                lda p1_y             
+                sta tp1_y            
+
+                lda #PF_H              
+                sta scanline           
+
+                lda #0                 ; set D1 to 0 to end VBLANK
+                sta WSYNC              ; 
+                sta VBLANK             ; turn on the beam
+
+kernel          lda #BEAR_H            ; load height of sprite
+                sec                    ; set carry flag
+                isb tp0_y              ; increase tp0_y subtract from accumulator
+                bcs draw_p0           
+                lda #0                 
+                jmp skip_p0            
+
+draw_p0         tay                    
+                lda (bearPtrP0),y      ; indirect mode bc (), pull graphic from pointer
+
+skip_p0         tax                   
+                lda #BEAR_H            
+                sec                   
+                isb tp1_y              
+                bcs draw_p1            
+                lda #0                
+                jmp skip_p1            
+
+draw_p1         tay                    
+                lda (bearPtrP1),y      
+
+skip_p1         sta WSYNC              
+                sta GRP1               
+                stx GRP0               
+
+                dec scanline           
+                bne kernel             
+
+                sta WSYNC              
+
+                lda #$2                ; set D1 = 1 to initiate VBLANK
+                sta VBLANK             ; turn off the beam
+                ldx #OS_H              
+
+overscan        sta WSYNC             
+                dex                    
+                bne overscan           
+
+                jmp nextFrame          ; jump back up to start the next frame
+
+; -- set horizontal position (a = X position, x = 0-1 player, 2-3 missiles, 4 ball)
+setHorizPos     sta WSYNC              ; start a new line
+                sec                    ; set carry flag
+.divLoop         sbc #15                ; subtract 15
+                bcs .divLoop            ; branch until negative
+                eor #7                 ; calculate fine offset
+                asl                    ; 
+                asl                    ; 
+                asl                    ; 
+                asl                    ; 
+                sta RESP0,x            ; fix coarse position
+                sta HMP0,x             ; set fine offset
+               	rts                    ; return to caller
+
+bear_pLSB:     	.byte <bear_f0         ; LSB
+              	.byte <bear_f1
+
+bear_pMSB:     	.byte >bear_f0         ; MSB
+		.byte >bear_f1
+                
+; Read joystick movement and apply to object 0
+MoveJoystick
+; Move vertically
+; (up and down are actually reversed since ypos starts at bottom)
+                ldx p0_y
+                lda #%00100000	;Up?
+                bit SWCHA
+                bne .SkipMoveUp
+                cpx #80
+                bcc .SkipMoveUp
+                dex
+.SkipMoveUp
+                lda #%00010000	;Down?
+                bit SWCHA 
+                bne .SkipMoveDown
+                cpx #254
+                bcs .SkipMoveDown
+                inx
+.SkipMoveDown
+                stx p0_y
+        ; Move horizontally
+                ldx p0_x
+                lda #%01000000	;Left?
+                bit SWCHA
+                bne .SkipMoveLeft
+                cpx #15
+                bcc .SkipMoveLeft
+                dex
+.SkipMoveLeft
+                lda #%10000000	;Right?
+                bit SWCHA 
+                bne .SkipMoveRight
+                cpx #160
+                bcs .SkipMoveRight
+                inx
+.SkipMoveRight
+                stx p0_x
+                rts		;return to caller 
+                
+MoveJoystick1
+; Move vertically
+; (up and down are actually reversed since ypos starts at bottom)
+                ldx p1_y
+                lda #%00000010	;Up?
+                bit SWCHA
+                bne .SkipMoveUp1
+                cpx #80
+                bcc .SkipMoveUp1
+                dex
+.SkipMoveUp1
+                lda #%00000001	;Down?
+                bit SWCHA 
+                bne .SkipMoveDown1
+                cpx #254
+                bcs .SkipMoveDown1
+                inx
+.SkipMoveDown1
+                stx p1_y
+        ; Move horizontally
+                ldx p1_x
+                lda #%00000100	;Left?
+                bit SWCHA
+                bne .SkipMoveLeft1
+                cpx #15
+                bcc .SkipMoveLeft1
+                dex
+.SkipMoveLeft1
+                lda #%00001000	;Right?
+                bit SWCHA 
+                bne .SkipMoveRight1
+                cpx #160
+                bcs .SkipMoveRight1
+                inx
+.SkipMoveRight1
+                stx p1_x
+                rts		;return to caller 
+                
+
+
+bear_f0:        .byte $0            
+                .byte %01000010
+                .byte %01111110
+                .byte %01000010
+                .byte %10000001
+                .byte %10100101
+                .byte %10100101
+                .byte %01000010
+                .byte %00111100
+                .byte %01000010
+                .byte %10111101
+                .byte %10011001
+                .byte %10100101
+                .byte %01000010
+                .byte %11111111
+                .byte %11000011
+
+bear_f1:       	.byte $0
+                .byte %10000001
+                .byte %01111110
+                .byte %01000010
+                .byte %10000001
+                .byte %10100101
+                .byte %11000011
+                .byte %01000010
+                .byte %00111100
+                .byte %01000010
+                .byte %10111101
+                .byte %10011001
+                .byte %10100101
+                .byte %01000010
+                .byte %11111111
+                .byte %11000011
+
+                 org $FFFA
+
+          	.word start            ; NMI  ($FFFA)
+              	.word start            ; RESET ($FFFC)
+              	.word start            ; IRQ ($FFFE)

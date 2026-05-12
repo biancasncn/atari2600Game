@@ -14,7 +14,7 @@ BEAR_F          equ #31                ; Number of frames in the bear animation 
 
 
                 seg.u vars             ; uninitialized segment
-                org $80                ; origin set at base of ram
+                org $80                ; origin set at base of ram                
 
 p0_y            .byte                   ; 1 byte - player 0 y pos
 p1_y            .byte                   ; player 1 y pos
@@ -23,6 +23,8 @@ p1_x            .byte                   ; player 1 x pos
 tp0_y           .byte                   ; temporary player 0 y pos
 tp1_y           .byte                   ; temporary player 1 y pos
 scanline        .byte                   ; current scanline
+
+temp            .byte                   ; 1 byte - player 0 y pos
 
 bear_frame      .byte                   ; current frame of bear animation
 bearPtrP0       ds 2			; 2 bytes, points at which frame 
@@ -35,13 +37,16 @@ bearPtrP1       ds 2
 start           CLEAN_START            ; ouput: all ram registers 0
 
                 lda #$5b
-                sta COLUBK             ; set the PF color
+                sta COLUBK             ; set the BG color
 
                 lda #$76
                 sta COLUP0             ; set the P1 color
 
                 lda #$96
                 sta COLUP1             ; set the P1 color
+                
+                lda #1
+                sta VDELP0
 
                 lda #165
                 sta p0_y               ; initial y pos of p0
@@ -51,16 +56,15 @@ start           CLEAN_START            ; ouput: all ram registers 0
                 sta p0_x               ; initial x pos of p0
                 lda #110
                 sta p1_x               ; initial x pos of p1 
-                
+                              
 
 nextFrame       VERTICAL_SYNC          ; output: a = 0
-                jsr MoveJoystick
-                jsr MoveJoystick1
+                jsr moveJoystick
+                jsr moveJoystick1
                 
                 lda p0_x
                 ldx #0                 ; P0
                 jsr setHorizPos        ; set the initial course position of the player 0 graphic
-
                 
                 lda p1_x
                 ldx #1                 ; P1
@@ -109,7 +113,6 @@ vblank          sta WSYNC
 
                 lda bear_pLSB,x       
                 sta bearPtrP1     
-
 ; vblank added all the bear graphics to their registers 
 
 bearDone        lda p0_y               
@@ -119,13 +122,13 @@ bearDone        lda p0_y
                 sta tp1_y            
 
                 lda #PF_H              
-                sta scanline           
+                sta scanline  
 
                 lda #0                 ; set D1 to 0 to end VBLANK
                 sta WSYNC              ; 
                 sta VBLANK             ; turn on the beam
 
-kernel          lda #BEAR_H            ; load height of sprite
+kernel 		lda #BEAR_H            ; load height of sprite
                 sec                    ; set carry flag
                 isb tp0_y              ; increase tp0_y subtract from accumulator
                 bcs .draw_p0           
@@ -133,7 +136,9 @@ kernel          lda #BEAR_H            ; load height of sprite
                 jmp .skip_p0            
 
 .draw_p0        tay                    
-                lda (bearPtrP0),y      ; indirect mode bc () -> pull graphic from pointer
+                lda (bearPtrP0),y      ; indirect mode bc () -> pull graphic from pointer              
+                sta GRP0
+                
 
 .skip_p0        tax                   
                 lda #BEAR_H            
@@ -141,14 +146,14 @@ kernel          lda #BEAR_H            ; load height of sprite
                 isb tp1_y              
                 bcs .draw_p1            
                 lda #0                
-                jmp .skip_p1            
+                jmp .skip_p1  
 
 .draw_p1        tay                    
-                lda (bearPtrP1),y      
+                lda (bearPtrP1),y 
 
 .skip_p1        sta WSYNC              
-                sta GRP1               
-                stx GRP0               
+                sta GRP1 
+                stx GRP0
 
                 dec scanline           
                 bne kernel             
@@ -157,7 +162,8 @@ kernel          lda #BEAR_H            ; load height of sprite
 
                 lda #$2                ; set D1 = 1 to initiate VBLANK
                 sta VBLANK             ; turn off the beam
-                ldx #OS_H              
+                ldx #OS_H 
+                               
 ; Kernel ENDS HERE
 
 overscan        sta WSYNC             
@@ -187,7 +193,7 @@ bear_pMSB     	.byte >bear_f0         ; MSB
 		.byte >bear_f1
                 
 ; Read joystick movement and apply to object 0
-MoveJoystick
+moveJoystick
 ; Move vertically
 ; (up and down are actually reversed since ypos starts at bottom)
                 ldx p0_y
@@ -225,7 +231,7 @@ MoveJoystick
                 stx p0_x
                 rts		;return to caller 
                 
-MoveJoystick1
+moveJoystick1
 ; Move vertically
 ; (up and down are actually reversed since ypos starts at bottom)
                 ldx p1_y
@@ -263,9 +269,22 @@ MoveJoystick1
                 stx p1_x
                 rts		;return to caller 
                 
+                
+                align $100 ; no crossing the page boundary
+                
+pf_data		.byte  4,#%00000000,#%11111110,#%00110000
+                .byte  8,#%01000000,#%00000001,#%01001000
+                .byte 15,#%00100000,#%01111110,#%10000100
+                .byte 20,#%00010000,#%10000000,#%00010000
+                .byte 20,#%00010000,#%01100011,#%10011000
+                .byte 15,#%00100000,#%00001100,#%01000100
+                .byte  8,#%11000000,#%00110000,#%00110010
+                .byte  4,#%00000000,#%11000000,#%00001100
+                .byte 0
+                
 
 
-bear_f0:        .byte $0            
+bear_f0         .byte $0            
                 .byte %01000010
                 .byte %01111110
                 .byte %01000010
@@ -282,7 +301,7 @@ bear_f0:        .byte $0
                 .byte %11111111
                 .byte %11000011
 
-bear_f1:       	.byte $0
+bear_f1        	.byte $0
                 .byte %10000001
                 .byte %01111110
                 .byte %01000010
@@ -298,6 +317,7 @@ bear_f1:       	.byte $0
                 .byte %01000010
                 .byte %11111111
                 .byte %11000011
+     
                 
 
                  org $FFFA

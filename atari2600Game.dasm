@@ -10,8 +10,7 @@ OS_H            equ #30                ; overscan height
 VB_H            equ #33                ; vertical blank height - VERTICAL_SYNC macro takes 3 + 1 code in VB
 
 BEAR_H          equ #15                ; bear sprite height
-BEAR_FP0        equ #31                ; Number of frames in the bear animation 0
-BEAR_FP1        equ #15                ; Number of frames in the bear animation 1
+BEAR_F          equ #31                ; Number of frames in the bear animation 0, set to 15 and 3xlsr for faster 
 
 
                 seg.u vars             ; uninitialized segment
@@ -25,9 +24,8 @@ tp0_y           .byte                   ; temporary player 0 y pos
 tp1_y           .byte                   ; temporary player 1 y pos
 scanline        .byte                   ; current scanline
 
-bear_frameP0    .byte                   ; current frame of bear animation
-bear_frameP1    .byte 
-bearPtrP0       ds 2			; 2 bytes
+bear_frame      .byte                   ; current frame of bear animation
+bearPtrP0       ds 2			; 2 bytes, points at which frame 
 bearPtrP1       ds 2			
 
                 seg main               ; start of main segment
@@ -77,38 +75,44 @@ vblank          sta WSYNC
                 bne vblank             ; branch if not equal
 
                 ; create a pointer to the bear graphic instead of pointing directy to it
-                inc bear_frameP0      
-                lda bear_frameP0     
-                and #BEAR_FP0        
-                sta bear_frameP0     
-                lsr                    
-                lsr                   
-                lsr                 
-                lsr                    
-                tax                    
+                inc bear_frame      
+                lda bear_frame     
+                and #BEAR_F        
+                sta bear_frame     
+                lsr                  ; lsr allow to say which frame animation needs to be in  
+                lsr                  ; when and =7, lsr -> f_0, when and >7, lsr -> f_1  
+                lsr
+                lsr
+                tax    
+                ; when bear frames are only set once and the AND is set to the number 15, it guarantees a constant 
+                ; switch between 0-7 being frame 0 and 8-15 being frame 1, with enough delay so long that there are x3 lsr
+                ; larger AND #num and more lsr would allow for more frame switches
+                
+                lda bear_pMSB,x		; pointer for the p0
+                sta bearPtrP0+1 
 
                 lda bear_pLSB,x       
-                sta bearPtrP0        
+                sta bearPtrP0
+                
+                ; following code and addition of another pointer to have different amount of frames for the p2 bear
+                ;inc bear_frame1     
+                ;lda bear_frame1     
+                ;and #15    
+                ;sta bear_frame1      
+                ;lsr                    
+                ;lsr                    
+                ;lsr   
+                ;tax
 
-                lda bear_pMSB,x       
-                sta bearPtrP0+1      
-
-                inc bear_frameP1     
-                lda bear_frameP1     
-                and #BEAR_FP1         
-                sta bear_frameP1      
-                lsr                    
-                lsr                    
-                lsr                    
-                tax                    
-
-                lda bear_pMSB,x       
+                lda bear_pMSB,x		; pointer for the p1
                 sta bearPtrP1+1      
 
                 lda bear_pLSB,x       
-                sta bearPtrP1         
+                sta bearPtrP1     
 
-bear.done       lda p0_y               
+; vblank added all the bear graphics to their registers 
+
+bearDone        lda p0_y               
                 sta tp0_y             
 
                 lda p1_y             
@@ -124,25 +128,25 @@ bear.done       lda p0_y
 kernel          lda #BEAR_H            ; load height of sprite
                 sec                    ; set carry flag
                 isb tp0_y              ; increase tp0_y subtract from accumulator
-                bcs draw_p0           
+                bcs .draw_p0           
                 lda #0                 
-                jmp skip_p0            
+                jmp .skip_p0            
 
-draw_p0         tay                    
-                lda (bearPtrP0),y      ; indirect mode bc (), pull graphic from pointer
+.draw_p0        tay                    
+                lda (bearPtrP0),y      ; indirect mode bc () -> pull graphic from pointer
 
-skip_p0         tax                   
+.skip_p0        tax                   
                 lda #BEAR_H            
                 sec                   
                 isb tp1_y              
-                bcs draw_p1            
+                bcs .draw_p1            
                 lda #0                
-                jmp skip_p1            
+                jmp .skip_p1            
 
-draw_p1         tay                    
+.draw_p1        tay                    
                 lda (bearPtrP1),y      
 
-skip_p1         sta WSYNC              
+.skip_p1        sta WSYNC              
                 sta GRP1               
                 stx GRP0               
 
@@ -154,6 +158,7 @@ skip_p1         sta WSYNC
                 lda #$2                ; set D1 = 1 to initiate VBLANK
                 sta VBLANK             ; turn off the beam
                 ldx #OS_H              
+; Kernel ENDS HERE
 
 overscan        sta WSYNC             
                 dex                    
@@ -293,6 +298,7 @@ bear_f1:       	.byte $0
                 .byte %01000010
                 .byte %11111111
                 .byte %11000011
+                
 
                  org $FFFA
 

@@ -179,35 +179,53 @@ bear_pMSB     	.byte >bear_f0         ; MSB
                 
 ; Read joystick movement
 moveJoystick
+		sta ENAM0
+                sta ENAM1
+		lda #$76               ; color index set to default col
+                bit INPT4              ; check player 1 button
+                bmi .noPress           ; branch if minus. D7 will be 0 if button is pressed
+                sta ENAM0
+                lda #$B0
+
+.noPress	sta COLUP0             ; set the P0 color 
+
+		lda #$96               
+                bit INPT5              ; player 2 button
+                bmi .noPress1          
+                sta ENAM1
+                lda #$40
+
+.noPress1	sta COLUP1             ; set the P1 color
+
 ; (up and down are actually reversed since ypos starts at bottom)
                 ldx p0_y
-                lda #%00100000	;Up?
+                lda #%00100000	
                 bit SWCHA
                 bne .SkipMoveUp
-                cpx #80
+                cpx #183
                 bcc .SkipMoveUp
                 dex
 .SkipMoveUp
-                lda #%00010000	;Down?
+                lda #%00010000	
                 bit SWCHA 
                 bne .SkipMoveDown
-                cpx #254
+                cpx #250
                 bcs .SkipMoveDown
                 inx
 .SkipMoveDown
                 stx p0_y 
                 ldx p0_x
-                lda #%01000000	;Left?
+                lda #%01000000	
                 bit SWCHA
                 bne .SkipMoveLeft
                 cpx #20
                 bcc .SkipMoveLeft
                 dex
 .SkipMoveLeft
-                lda #%10000000	;Right?
+                lda #%10000000	
                 bit SWCHA 
                 bne .SkipMoveRight
-                cpx #150
+                cpx #80
                 bcs .SkipMoveRight
                 inx
 .SkipMoveRight
@@ -217,30 +235,30 @@ moveJoystick
 ; move joystick for player 1
 moveJoystick1
                 ldx p1_y
-                lda #%00000010	;Up?
+                lda #%00000010	
                 bit SWCHA
                 bne .SkipMoveUp1
-                cpx #80
+                cpx #183
                 bcc .SkipMoveUp1
                 dex
 .SkipMoveUp1
-                lda #%00000001	;Down?
+                lda #%00000001	
                 bit SWCHA 
                 bne .SkipMoveDown1
-                cpx #254
+                cpx #250
                 bcs .SkipMoveDown1
                 inx
 .SkipMoveDown1
                 stx p1_y
                 ldx p1_x
-                lda #%00000100	;Left?
+                lda #%00000100	
                 bit SWCHA
                 bne .SkipMoveLeft1
-                cpx #20
+                cpx #91
                 bcc .SkipMoveLeft1
                 dex
 .SkipMoveLeft1
-                lda #%00001000	;Right?
+                lda #%00001000	
                 bit SWCHA 
                 bne .SkipMoveRight1
                 cpx #150

@@ -4,9 +4,8 @@
                 include "macro.h"
                 include "xmacro.h"
 
-PF_H            equ #92                ; playfield height - playfied data x 4
-OS_H            equ #30                ; overscan height
-VB_H            equ #30                ; vertical blank height -> 33 or 30 idk
+PF_H            equ #96                ; playfield height - playfied data x 4 -> 4LK
+VB_H            equ #26                ; vertical blank height 
 
 BEAR_H          equ #15                ; bear sprite height
 BEAR_F          equ #15                ; Number of frames in the bear animation 0, set to 15 and 3xlsr for faster 
@@ -24,7 +23,12 @@ tp0_y           .byte                   ; temporary player 0 y pos
 tp1_y           .byte                   ; temporary player 1 y pos
 
 bear_frame      .byte                   ; current frame of bear animation
-bearPtr	        ds 2			; 2 bytes, points at which frame 		
+bearPtr	        .byte			; points at which frame to be at at
+
+m0_y		.byte
+m1_y		.byte
+m0_x		.byte
+m1_x		.byte
 
                 seg main               
                 org $F000
@@ -50,22 +54,33 @@ start           CLEAN_START
                 lda #20
                 sta p0_x               ; initial x pos of p0
                 lda #150
-                sta p1_x               ; initial x pos of p1 
-                              
+                sta p1_x               ; initial x pos of p1                                              
 
 nextFrame       VERTICAL_SYNC 
-		sta WSYNC
               
                 jsr moveJoystick
                 jsr moveJoystick1               
                 
                 lda p0_x
                 ldx #0                 ; P0
-                jsr setHorizPos        ; set the initial course position of the player 0 graphic
+                jsr setHorizPos        ; set the initial course position of the player 0 
                 
                 lda p1_x
                 ldx #1                 ; P1
-                jsr setHorizPos        ; set the initial course position of the player 1 graphic
+                jsr setHorizPos        ; set the initial course position of the player 1 
+                
+                lda m0_x	       ; M0
+                ldx #0                 
+                jsr setHorizPosM  
+                
+                lda m1_x	       ; M1
+                ldx #1                 
+                jsr setHorizPosM 
+                
+                lda #%010000
+		sta NUSIZ0
+                lda #%010000
+		sta NUSIZ1
                 
                 sta WSYNC	       ; NEED wsync and hmove, so scanline processes left/right movement correctly
                 sta HMOVE	       ; if commented out, horizontal movements will be staggered                            
@@ -74,6 +89,9 @@ nextFrame       VERTICAL_SYNC
 vblank          sta WSYNC            
                 dex                    ; decrement x by 1
                 bne vblank             ; branch if not equal
+                
+                ldx $43 
+                stx TIM64T
 
                 ; create a pointer to the bear graphic instead of pointing directy to it
                 inc bear_frame      
@@ -87,16 +105,19 @@ vblank          sta WSYNC
                 ; when bear frames are only set once and the AND is set to the number 15
                 ; it guarantees a constant switch between 0-7 being frame 0 and 8-15 being frame 1, bc of the x3 lsr
                 
-                lda bear_pMSB,x		; pointer for the p0
+                lda bear_pMSB,x		
                 sta bearPtr+1 
                 lda bear_pLSB,x       
                 sta bearPtr
                                 
 ; vblank -> added all the bear graphics to their registers 
-bearDone        lda p0_y               
+bearDone        lda INTIM
+		bne bearDone
+		
+		lda p0_y               
                 sta tp0_y             
                 lda p1_y             
-                sta tp1_y            
+                sta tp1_y
 
                 ldx #255
                 ldy #PF_H
@@ -112,7 +133,9 @@ kernel          lda pf_count
                 
 drawBears	lda #BEAR_H            ; load height of sprite
                 sec                    ; set carry flag
-                isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
+                inc tp0_y
+                sbc tp0_y
+                ;isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
                 bcs .draw_p0           
                 lda #0                                   
 	
@@ -122,8 +145,10 @@ drawBears	lda #BEAR_H            ; load height of sprite
                 sta GRP0  
                 
                 lda #BEAR_H            ; load height of sprite
-                sec     
-                isb tp1_y              ; increase tp1_y subtract from accumulator
+                sec 
+                inc tp1_y
+                sbc tp1_y
+                ;isb tp1_y              ; increase tp1_y subtract from accumulator
                 bcs .draw_p1           
                 lda #0           
 
@@ -147,13 +172,15 @@ drawBears	lda #BEAR_H            ; load height of sprite
 ; kernel end here
 	
 pf_end		lda #%10                
-                sta VBLANK             ; turn off the beam
-                sta WSYNC
-                
-                ldx #30                                
+                sta VBLANK             ; turn off the beam              
+                            
 overscan        sta WSYNC             
-                dex                    
-                bne overscan           
+                
+                ldx #35
+                stx TIM64T
+                
+timer		ldx INTIM
+		bne timer
 
                 jmp nextFrame          ; jump back up to start the next frame
 
@@ -163,13 +190,32 @@ setHorizPos     sta WSYNC              ; start a new line
 .divLoop      	sbc #15                ; subtract 15
                 bcs .divLoop           ; branch until negative
                 eor #7                 ; calculate fine offset
-                asl                    ; 
-                asl                    ; 
-                asl                    ; 
-                asl                    ; 
+                asl                     
+                asl                     
+                asl                     
+                asl                    
                 sta RESP0,x            ; fix coarse position
                 sta HMP0,x             ; set fine offset
                	rts                    ; return to caller
+                
+setHorizPosM    sta WSYNC              ; start a new line
+                sec	               ; set carry flag
+		cpx #1
+                beq .divLoopM1	       ; if m1, branch to m1 loop
+.divLoopM       sbc #15                ; subtract 15
+                bcs .divLoopM          ; branch until negative
+                eor #-7                ; calculate fine offset -> M2 only moves to the right
+                jmp .store
+.divLoopM1      sbc #15                ; subtract 15
+                bcs .divLoopM1         ; branch until negative
+                eor #7 
+.store          asl                     
+                asl                     
+                asl                     
+                asl                     
+                sta RESMP0,x           ; fix coarse position to player
+                sta HMM0,x             ; set fine offset
+               	rts                    ; return to caller               
 
 bear_pLSB     	.byte <bear_f0         ; LSB
               	.byte <bear_f1
@@ -178,24 +224,27 @@ bear_pMSB     	.byte >bear_f0         ; MSB
 		.byte >bear_f1
                 
 ; Read joystick movement
-moveJoystick
-		sta ENAM0
-                sta ENAM1
+moveJoystick	
+; reading the input button stuff
 		lda #$76               ; color index set to default col
                 bit INPT4              ; check player 1 button
                 bmi .noPress           ; branch if minus. D7 will be 0 if button is pressed
+                lda #%00000010
                 sta ENAM0
                 lda #$B0
 
-.noPress	sta COLUP0             ; set the P0 color 
+.noPress	sta COLUP0             ; set the P0 color
+		;sta RESMP0
 
 		lda #$96               
                 bit INPT5              ; player 2 button
-                bmi .noPress1          
+                bmi .noPress1 
+                lda #%00000010
                 sta ENAM1
                 lda #$40
 
 .noPress1	sta COLUP1             ; set the P1 color
+		;sta RESMP1
 
 ; (up and down are actually reversed since ypos starts at bottom)
                 ldx p0_y
@@ -289,6 +338,7 @@ PF0_data
                  .byte #%00110000
                  .byte #%00110000
                  .byte #%00110000
+                 .byte #%00110000
                  .byte #%01110000
                  .byte #%11110000
                  .byte #%11110000       
@@ -302,6 +352,7 @@ PF1_data
                  .byte #%00000000
                  .byte #%00000000
                  .byte #%00000000
+                 .byte #%00100000
                  .byte #%00100000
                  .byte #%00100000
                  .byte #%00100000
@@ -328,6 +379,7 @@ PF2_data
                  .byte #%00001001
                  .byte #%00000101
                  .byte #%00000011
+                 .byte #%11000000
                  .byte #%11000000
                  .byte #%11000000
                  .byte #%11000000

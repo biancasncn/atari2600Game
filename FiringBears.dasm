@@ -83,8 +83,7 @@ nextFrame       VERTICAL_SYNC
 		sta NUSIZ1
                 
                 sta WSYNC	       ; NEED wsync and hmove, so scanline processes left/right movement correctly
-                sta HMOVE	       ; if commented out, horizontal movements will be staggered                            
-                                          
+                sta HMOVE	       ; if commented out, horizontal movements will be staggered                                                                      
                               
 vblank          ldx #35 
                 stx TIM64T
@@ -165,7 +164,6 @@ drawBears	lda #BEAR_H            ; load height of sprite
                 bne kernel    
 
                 sta WSYNC 
-                
 ; kernel end here
 	
 pf_end		sta WSYNC
@@ -223,6 +221,9 @@ moveJoystick	; Read joystick movement
 		lda #$76               ; color index set to default col
                 bit INPT4              ; check player 1 button
                 bmi .noPress           ; branch if minus. D7 will be 0 if button is pressed
+                ldy p1_y
+                cpy pf_count
+                bne .move
                 lda #%00000010
                 sta ENAM0
                 lda #$B0
@@ -240,7 +241,7 @@ moveJoystick	; Read joystick movement
 .noPress1	sta COLUP1             ; set the P1 color
 		;sta RESMP1
 
-; (up and down are actually reversed since ypos starts at bottom)
+.move; (up and down are actually reversed since ypos starts at bottom)
                 ldx p0_y
                 lda #%00100000	
                 bit SWCHA

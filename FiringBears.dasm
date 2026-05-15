@@ -57,6 +57,7 @@ start           CLEAN_START
                 sta p1_x               ; initial x pos of p1                                              
 
 nextFrame       VERTICAL_SYNC
+		sta WSYNC
               
                 jsr moveJoystick              
                 
@@ -85,7 +86,7 @@ nextFrame       VERTICAL_SYNC
                 sta HMOVE	       ; if commented out, horizontal movements will be staggered                            
                                           
                               
-vblank          ldx #36 
+vblank          ldx #35 
                 stx TIM64T
 
                 ; create a pointer to the bear graphic instead of pointing directy to it
@@ -105,7 +106,7 @@ vblank          ldx #36
                 lda bear_pLSB,x       
                 sta bearPtr
                 
-               	lda p0_y               
+                lda p0_y               
                 sta tp0_y             
                 lda p1_y             
                 sta tp1_y
@@ -113,8 +114,8 @@ vblank          ldx #36
                 ldx #255
                 ldy #PF_H
                 sty pf_count
-                                
-; vblank -> added all the bear graphics to their registers 
+                                                
+; vblank -> added all the bear and pf graphics 
 bearDone        lda INTIM
 		bne bearDone
                 
@@ -129,9 +130,9 @@ kernel          lda pf_count
                 
 drawBears	lda #BEAR_H            ; load height of sprite
                 sec                    ; set carry flag
-                ;inc tp0_y
-                ;sbc tp0_y
-                isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
+                inc tp0_y
+                sbc tp0_y
+                ;isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
                 bcs .draw_p0           
                 lda #0                                   
 	
@@ -142,9 +143,9 @@ drawBears	lda #BEAR_H            ; load height of sprite
                 
                 lda #BEAR_H            ; load height of sprite
                 sec 
-                ;inc tp1_y
-                ;sbc tp1_y
-                isb tp1_y              ; increase tp1_y subtract from accumulator
+                inc tp1_y
+                sbc tp1_y
+                ;isb tp1_y              ; increase tp1_y subtract from accumulator
                 bcs .draw_p1           
                 lda #0           
 
@@ -163,12 +164,7 @@ drawBears	lda #BEAR_H            ; load height of sprite
                 dec pf_count
                 bne kernel    
 
-                sta WSYNC   
-                
-                lda #0
-                sta PF0
-                sta PF1
-                sta PF2
+                sta WSYNC 
                 
 ; kernel end here
 	
@@ -176,7 +172,7 @@ pf_end		sta WSYNC
 		lda #%10                
                 sta VBLANK             ; turn off the beam              
                             
-overscan        ldx #35
+overscan        ldx #34
                 stx TIM64T
                 
 timer		ldx INTIM

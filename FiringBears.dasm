@@ -1,11 +1,11 @@
-;Add title description..... HERE
+; Firing Bears
+; Made on 8bitworkshop as a Atari2600 game using assembly 6502
 		processor 6502
                 include "vcs.h"
                 include "macro.h"
                 include "xmacro.h"
 
 PF_H            equ #96                ; playfield height - playfied data x 4 -> 4LK
-VB_H            equ #26                ; vertical blank height 
 
 BEAR_H          equ #15                ; bear sprite height
 BEAR_F          equ #15                ; Number of frames in the bear animation 0, set to 15 and 3xlsr for faster 
@@ -56,10 +56,9 @@ start           CLEAN_START
                 lda #150
                 sta p1_x               ; initial x pos of p1                                              
 
-nextFrame       VERTICAL_SYNC 
+nextFrame       VERTICAL_SYNC
               
-                jsr moveJoystick
-                jsr moveJoystick1               
+                jsr moveJoystick              
                 
                 lda p0_x
                 ldx #0                 ; P0
@@ -85,12 +84,8 @@ nextFrame       VERTICAL_SYNC
                 sta WSYNC	       ; NEED wsync and hmove, so scanline processes left/right movement correctly
                 sta HMOVE	       ; if commented out, horizontal movements will be staggered                            
                                           
-                ldx #VB_H              
-vblank          sta WSYNC            
-                dex                    ; decrement x by 1
-                bne vblank             ; branch if not equal
-                
-                ldx $43 
+                              
+vblank          ldx #36 
                 stx TIM64T
 
                 ; create a pointer to the bear graphic instead of pointing directy to it
@@ -109,21 +104,22 @@ vblank          sta WSYNC
                 sta bearPtr+1 
                 lda bear_pLSB,x       
                 sta bearPtr
+                
+               	lda p0_y               
+                sta tp0_y             
+                lda p1_y             
+                sta tp1_y
+                
+                ldx #255
+                ldy #PF_H
+                sty pf_count
                                 
 ; vblank -> added all the bear graphics to their registers 
 bearDone        lda INTIM
 		bne bearDone
-		
-		lda p0_y               
-                sta tp0_y             
-                lda p1_y             
-                sta tp1_y
-
-                ldx #255
-                ldy #PF_H
-                sty pf_count
                 
                 lda #0
+                sta WSYNC
                 sta VBLANK             ; turn on the beam
 
 kernel          lda pf_count
@@ -133,22 +129,22 @@ kernel          lda pf_count
                 
 drawBears	lda #BEAR_H            ; load height of sprite
                 sec                    ; set carry flag
-                inc tp0_y
-                sbc tp0_y
-                ;isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
+                ;inc tp0_y
+                ;sbc tp0_y
+                isb tp0_y              ; does inc tp0_y -> sbc tp0_y in one go
                 bcs .draw_p0           
                 lda #0                                   
 	
 .draw_p0        tay                    
                 lda (bearPtr),y      ; indirect mode bc () -> pull graphic from pointer
-                sta WSYNC   
+                ;sta WSYNC   
                 sta GRP0  
                 
                 lda #BEAR_H            ; load height of sprite
                 sec 
-                inc tp1_y
-                sbc tp1_y
-                ;isb tp1_y              ; increase tp1_y subtract from accumulator
+                ;inc tp1_y
+                ;sbc tp1_y
+                isb tp1_y              ; increase tp1_y subtract from accumulator
                 bcs .draw_p1           
                 lda #0           
 
@@ -167,16 +163,20 @@ drawBears	lda #BEAR_H            ; load height of sprite
                 dec pf_count
                 bne kernel    
 
-                sta WSYNC                                                                     
+                sta WSYNC   
+                
+                lda #0
+                sta PF0
+                sta PF1
+                sta PF2
                 
 ; kernel end here
 	
-pf_end		lda #%10                
+pf_end		sta WSYNC
+		lda #%10                
                 sta VBLANK             ; turn off the beam              
                             
-overscan        sta WSYNC             
-                
-                ldx #35
+overscan        ldx #35
                 stx TIM64T
                 
 timer		ldx INTIM
@@ -184,7 +184,6 @@ timer		ldx INTIM
 
                 jmp nextFrame          ; jump back up to start the next frame
 
-; -- set horizontal position (a = X position, x = 0-1 player, 2-3 missiles, 4 ball)
 setHorizPos     sta WSYNC              ; start a new line
                 sec                    ; set carry flag
 .divLoop      	sbc #15                ; subtract 15
@@ -223,8 +222,7 @@ bear_pLSB     	.byte <bear_f0         ; LSB
 bear_pMSB     	.byte >bear_f0         ; MSB
 		.byte >bear_f1
                 
-; Read joystick movement
-moveJoystick	
+moveJoystick	; Read joystick movement
 ; reading the input button stuff
 		lda #$76               ; color index set to default col
                 bit INPT4              ; check player 1 button
@@ -254,15 +252,15 @@ moveJoystick
                 cpx #183
                 bcc .SkipMoveUp
                 dex
-.SkipMoveUp
-                lda #%00010000	
+                
+.SkipMoveUp	lda #%00010000	
                 bit SWCHA 
                 bne .SkipMoveDown
                 cpx #250
                 bcs .SkipMoveDown
                 inx
-.SkipMoveDown
-                stx p0_y 
+                
+.SkipMoveDown	stx p0_y 
                 ldx p0_x
                 lda #%01000000	
                 bit SWCHA
@@ -270,19 +268,17 @@ moveJoystick
                 cpx #20
                 bcc .SkipMoveLeft
                 dex
-.SkipMoveLeft
-                lda #%10000000	
+                
+.SkipMoveLeft	lda #%10000000	
                 bit SWCHA 
                 bne .SkipMoveRight
                 cpx #80
                 bcs .SkipMoveRight
                 inx
-.SkipMoveRight
-                stx p0_x
-                rts		;return to caller 
                 
+.SkipMoveRight	stx p0_x
+
 ; move joystick for player 1
-moveJoystick1
                 ldx p1_y
                 lda #%00000010	
                 bit SWCHA
@@ -290,15 +286,15 @@ moveJoystick1
                 cpx #183
                 bcc .SkipMoveUp1
                 dex
-.SkipMoveUp1
-                lda #%00000001	
+                
+.SkipMoveUp1	lda #%00000001	
                 bit SWCHA 
                 bne .SkipMoveDown1
                 cpx #250
                 bcs .SkipMoveDown1
                 inx
-.SkipMoveDown1
-                stx p1_y
+                
+.SkipMoveDown1	stx p1_y
                 ldx p1_x
                 lda #%00000100	
                 bit SWCHA
@@ -306,15 +302,15 @@ moveJoystick1
                 cpx #91
                 bcc .SkipMoveLeft1
                 dex
-.SkipMoveLeft1
-                lda #%00001000	
+                
+.SkipMoveLeft1 	lda #%00001000	
                 bit SWCHA 
                 bne .SkipMoveRight1
                 cpx #150
                 bcs .SkipMoveRight1
                 inx
-.SkipMoveRight1
-                stx p1_x
+                
+.SkipMoveRight1	stx p1_x
                 rts		;return to caller               
                                                
 PF0_data
